@@ -1,131 +1,129 @@
 const http = require("http");
 const url = require("url");
+const mysql = require("mysql2");
 
-const BASE_URL = "";
-const PORT = 3000;
+class Database {
+  constructor(config) {
+    this.connection = mysql.createConnection(config);
+    this.connect();
+  }
 
-let totalRequests = 0;
-let words = [
-    { word: "apple", definition: "A fruit that grows on trees." },
-    { word: "banana", definition: "A long yellow fruit." },
-    { word: "cat", definition: "A small domesticated carnivorous mammal." },
-];
+  connect() {
+    this.connection.connect(err => {
+      if (err) {
+        console.error("Database connection failed:", err.message);
+        throw err;
+      }
+      console.log("Database connected successfully");
+    });
+  }
 
-function sendJSON(res, status, data) {
-    res.writeHead(status, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(data));
+  query(sql, callback) {
+    this.connection.query(sql, callback);
+  }
+
+  isSafeQuery(query) {
+    return !/(DROP|UPDATE|DELETE)/i.test(query);
+  }
 }
 
-function setCORS(res, origin = "*") {
+class ResponseHelper {
+  static sendJSON(res, status, data) {
+    res.writeHead(status, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(data));
+  }
+
+  static setCORS(res, origin = "*") {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  }
 }
 
-function isValidWord(word) {
-    return typeof word === "string" && word.match(/^[A-Za-z]+$/) !== null;
-}
+class ApiServer {
+  constructor(port, dbConfig) {
+    this.port = port;
+    this.db = new Database(dbConfig);
+    this.server = http.createServer(this.handleRequest.bind(this));
+  }
 
+  start() {
+    this.server.listen(this.port, () =>
+      console.log(`Server running on port ${this.port}`)
+    );
+  }
 
-function isValidDefinition(def) {
-    return typeof def === "string" && def.trim().length > 0;
-}
-
-const server = http.createServer((req, res) => {
-    setCORS(res);
-
+  handleRequest(req, res) {
+    ResponseHelper.setCORS(res);
     if (req.method === "OPTIONS") {
-        res.writeHead(204);
-        res.end();
-        return;
+      res.writeHead(204);
+      res.end();
+      return;
     }
 
     const parsedURL = url.parse(req.url, true);
     const path = parsedURL.pathname;
     const method = req.method;
 
-    totalRequests++;
-
-    if (path === `${BASE_URL}/api/definitions/` && method === "GET") {
-        const query = parsedURL.query;
-
-        if (!query.word) {
-            return sendJSON(res, 200, {
-                message: `Request #${totalRequests}: All entries retrieved!`,
-                data: words,
-                totalEntries: words.length,
-            });
-        }
-
-        const word = words.find(
-            (w) => w.word.toLowerCase() === query.word.toLowerCase(),
-        );
-
-        if (word) {
-            return sendJSON(res, 200, {
-                message: `Request #${totalRequests}: Entry retrieved!`,
-                data: word,
-                totalEntries: words.length,
-            });
-        } else {
-            return sendJSON(res, 404, { error: "Word not found!" });
-        }
+    if (path === "/api/sql") {
+      if (method === "GET") return this.handleGetSQL(parsedURL, res);
+      if (method === "POST") return this.handlePostSQL(req, res);
     }
 
-    if (path === `${BASE_URL}/api/definitions/` && method === "POST") {
-        let body = "";
+    ResponseHelper.sendJSON(res, 404, { error: "Route not found" });
+  }
 
-        req.on("data", (chunk) => (body += chunk));
+  handleGetSQL(parsedURL, res) {
+    const query = parsedURL.query.q;
+    if (!query)
+      return ResponseHelper.sendJSON(res, 400, { error: "Missing query parameter 'q'" });
 
-        req.on("end", () => {
-            try {
-                const newWord = JSON.parse(body);
+    if (!this.db.isSafeQuery(query))
+      return ResponseHelper.sendJSON(res, 403, { error: "Forbidden SQL operation" });
 
-                if (!newWord.word || !newWord.definition) {
-                    return sendJSON(res, 400, {
-                        error: "Both 'word' and 'definition' are required",
-                    });
-                }
+    this.db.query(query, (err, results) => {
+      if (err)
+        return ResponseHelper.sendJSON(res, 400, { error: err.message });
 
-                if (!isValidWord(newWord.word)) {
-                    return sendJSON(res, 400, {
-                        error: "'word' must be a non-empty string with letters only",
-                    });
-                }
+      ResponseHelper.sendJSON(res, 200, { data: results });
+    });
+  }
 
-                if (!isValidDefinition(newWord.definition)) {
-                    return sendJSON(res, 400, {
-                        error: "'definition' must be a non-empty string",
-                    });
-                }
+  handlePostSQL(req, res) {
+    let body = "";
+    req.on("data", chunk => (body += chunk));
+    req.on("end", () => {
+      try {
+        const { query } = JSON.parse(body);
+        if (!query)
+          return ResponseHelper.sendJSON(res, 400, { error: "Missing 'query' in request body" });
 
-                const exists = words.some(
-                    (w) => w.word.toLowerCase() === newWord.word.toLowerCase(),
-                );
+        if (!this.db.isSafeQuery(query))
+          return ResponseHelper.sendJSON(res, 403, { error: "Forbidden SQL operation" });
 
-                if (exists) {
-                    return sendJSON(res, 409, {
-                        error: `${newWord.word} already exists`,
-                    });
-                }
+        this.db.query(query, (err, result) => {
+          if (err)
+            return ResponseHelper.sendJSON(res, 400, { error: err.message });
 
-                words.push(newWord);
-                return sendJSON(res, 201, {
-                    message: `Request #${totalRequests}: New entry recorded!`,
-                    data: newWord,
-                    totalEntries: words.length,
-                });
-            } catch (err) {
-                return sendJSON(res, 400, { error: "Invalid JSON format" });
-            }
+          ResponseHelper.sendJSON(res, 201, {
+            message: "Query executed successfully",
+            affectedRows: result.affectedRows,
+            insertId: result.insertId,
+          });
         });
+      } catch (err) {
+        return ResponseHelper.sendJSON(res, 400, { error: "Invalid JSON format" });
+      }
+    });
+  }
+}
 
-        return;
-    }
-
-    return sendJSON(res, 404, { error: "Route not found." });
+const server = new ApiServer(3000, {
+  host: "mysql-18ed769b-compe3920-assignment-2.b.aivencloud.com",
+  user: "avnadmin",
+  password: "AVNS_hc9yjQX6soAhd9sMHJi",
+  database: "defaultdb",
+  port: 13149
 });
 
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+server.start();
