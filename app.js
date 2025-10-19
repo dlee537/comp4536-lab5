@@ -1,3 +1,4 @@
+require('dotenv').config();
 const http = require("http");
 const url = require("url");
 const mysql = require("mysql2");
@@ -66,7 +67,6 @@ class ApiServer {
     const path = parsedURL.pathname;
     const method = req.method;
 
-    // Remove the basePath prefix for routing
     const relativePath = path.startsWith(this.basePath) ? path.slice(this.basePath.length) : path;
 
     if (relativePath === "/sql") {
@@ -122,13 +122,17 @@ class ApiServer {
   }
 }
 
-const server = new ApiServer(3000, {
-  host: "mysql-18ed769b-compe3920-assignment-2.b.aivencloud.com",
-  user: "avnadmin",
-  password: "AVNS_hc9yjQX6soAhd9sMHJi",
-  database: "defaultdb",
-  port: 13149
-},
-  "/comp4537/labs/5/api");
+// Use environment variables
+const server = new ApiServer(
+  process.env.PORT,
+  {
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    port: process.env.DB_PORT,
+  },
+  process.env.BASE_PATH
+);
 
 server.start();
