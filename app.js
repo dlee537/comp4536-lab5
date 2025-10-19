@@ -45,6 +45,7 @@ class ApiServer {
   constructor(port, dbConfig) {
     this.port = port;
     this.db = new Database(dbConfig);
+    this.basePath = basePath;
     this.server = http.createServer(this.handleRequest.bind(this));
   }
 
@@ -66,7 +67,9 @@ class ApiServer {
     const path = parsedURL.pathname;
     const method = req.method;
 
-    if (path === "/api/sql") {
+    const relativePath = path.startsWith(this.basePath) ? path.slice(this.basePath.length) : path;
+
+    if (relativePath === "/sql") {
       if (method === "GET") return this.handleGetSQL(parsedURL, res);
       if (method === "POST") return this.handlePostSQL(req, res);
     }
