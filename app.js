@@ -1,4 +1,4 @@
-require('dotenv').config();
+require("dotenv").config();
 const http = require("http");
 const url = require("url");
 const mysql = require("mysql2");
@@ -42,11 +42,9 @@ class ResponseHelper {
 }
 
 class ApiServer {
-  constructor(port, dbConfig, basePath = "/api") {
+  constructor(port, dbConfig) {
     this.port = port;
     this.db = new Database(dbConfig);
-    // Normalize basePath: remove trailing slash
-    this.basePath = (basePath || "/api").replace(/\/$/, "");
     this.server = http.createServer(this.handleRequest.bind(this));
   }
 
@@ -65,19 +63,15 @@ class ApiServer {
     }
 
     const parsedURL = url.parse(req.url, true);
-    const path = (parsedURL.pathname || "").replace(/\/$/, "");
+    const path = parsedURL.pathname;
     const method = req.method;
 
-    const relativePath = path.startsWith(this.basePath)
-      ? path.slice(this.basePath.length) || "/"
-      : path;
-
-    if (relativePath === "/sql") {
+    if (path === "/api/sql") {
       if (method === "GET") return this.handleGetSQL(parsedURL, res);
       if (method === "POST") return this.handlePostSQL(req, res);
-    } else {
-      ResponseHelper.sendJSON(res, 404, { error: "Route not found" });
     }
+
+    ResponseHelper.sendJSON(res, 404, { error: "Route not found" });
   }
 
   handleGetSQL(parsedURL, res) {
@@ -125,7 +119,6 @@ class ApiServer {
   }
 }
 
-// Start the server using environment variables
 const server = new ApiServer(
   process.env.PORT,
   {
