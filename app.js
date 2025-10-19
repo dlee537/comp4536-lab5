@@ -45,7 +45,7 @@ class ApiServer {
   constructor(port, dbConfig, basePath = "/api") {
     this.port = port;
     this.db = new Database(dbConfig);
-    // Normalize basePath: remove trailing slash
+
     this.basePath = (basePath || "/api").replace(/\/$/, "");
     this.server = http.createServer(this.handleRequest.bind(this));
   }
