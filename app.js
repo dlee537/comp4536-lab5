@@ -45,7 +45,8 @@ class ApiServer {
   constructor(port, dbConfig, basePath = "/api") {
     this.port = port;
     this.db = new Database(dbConfig);
-    this.basePath = basePath;
+    // Normalize basePath: remove trailing slash
+    this.basePath = (basePath || "/api").replace(/\/$/, "");
     this.server = http.createServer(this.handleRequest.bind(this));
   }
 
@@ -64,10 +65,12 @@ class ApiServer {
     }
 
     const parsedURL = url.parse(req.url, true);
-    const path = parsedURL.pathname;
+    const path = (parsedURL.pathname || "").replace(/\/$/, "");
     const method = req.method;
 
-    const relativePath = path.startsWith(this.basePath) ? path.slice(this.basePath.length) : path;
+    const relativePath = path.startsWith(this.basePath)
+      ? path.slice(this.basePath.length) || "/"
+      : path;
 
     if (relativePath === "/sql") {
       if (method === "GET") return this.handleGetSQL(parsedURL, res);
@@ -122,7 +125,7 @@ class ApiServer {
   }
 }
 
-// Use environment variables
+// Start the server using environment variables
 const server = new ApiServer(
   process.env.PORT,
   {
