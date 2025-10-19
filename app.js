@@ -41,9 +41,10 @@ class ResponseHelper {
 }
 
 class ApiServer {
-  constructor(port, dbConfig) {
+  constructor(port, dbConfig, basePath = "/api") {
     this.port = port;
     this.db = new Database(dbConfig);
+    this.basePath = basePath;
     this.server = http.createServer(this.handleRequest.bind(this));
   }
 
@@ -65,12 +66,15 @@ class ApiServer {
     const path = parsedURL.pathname;
     const method = req.method;
 
-    if (path === "/api/sql") {
+    // Remove the basePath prefix for routing
+    const relativePath = path.startsWith(this.basePath) ? path.slice(this.basePath.length) : path;
+
+    if (relativePath === "/sql") {
       if (method === "GET") return this.handleGetSQL(parsedURL, res);
       if (method === "POST") return this.handlePostSQL(req, res);
+    } else {
+      ResponseHelper.sendJSON(res, 404, { error: "Route not found" });
     }
-
-    ResponseHelper.sendJSON(res, 404, { error: "Route not found" });
   }
 
   handleGetSQL(parsedURL, res) {
@@ -124,6 +128,7 @@ const server = new ApiServer(3000, {
   password: "AVNS_hc9yjQX6soAhd9sMHJi",
   database: "defaultdb",
   port: 13149
-});
+},
+  "/comp4537/labs/5/api");
 
 server.start();
